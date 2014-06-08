@@ -11,10 +11,10 @@
 #include "stat.h"
 #include "param.h"
 
-int nblocks = 985;
+int nblocks = 32686;
 int nlog = LOGSIZE;
 int ninodes = 200;
-int size = 1024;
+int size = 32768;
 
 int fsfd;
 struct superblock sb;
@@ -83,9 +83,9 @@ main(int argc, char *argv[])
   sb.ninodes = xint(ninodes);
   sb.nlog = xint(nlog);
 
-  bitblocks = size/(512*8) + 1;
-  usedblocks = ninodes / IPB + 3 + bitblocks;
-  freeblock = usedblocks;
+  bitblocks = size/(512*8) + 1; //9
+  usedblocks = ninodes / IPB + 3 + bitblocks; //50 + 3 + 9
+  freeblock = usedblocks;  
 
   printf("used %d (bit %d ninode %zu) free %u log %u total %d\n", usedblocks,
          bitblocks, ninodes/IPB + 1, freeblock, nlog, nblocks+usedblocks+nlog);
