@@ -19,6 +19,11 @@ struct superblock {
   uint nlog;         // Number of log blocks
 };
 
+struct symlink {
+  uint counter;
+  char* path;
+};
+
 #define NDIRECT 12
 #define NINDIRECT (BSIZE / sizeof(uint))
 #define NDOUBLEIND (BSIZE / sizeof(uint))*(BSIZE / sizeof(uint))

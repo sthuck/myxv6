@@ -423,3 +423,96 @@ sys_pipe(void)
   fd[1] = fd1;
   return 0;
 }
+
+
+int 
+sys_symlink(void) {
+  char* oldpath;
+  char* newpath;
+  struct inode *ip,*oldip;
+  if(argstr(0, &oldpath) < 0)
+    return -1;
+  if(argstr(1, &newpath) < 0)
+    return -1;
+
+  int counter=1;
+  oldip = namei(oldpath);
+  if (oldip) {
+  ilock(oldip);
+  if (oldip->type==T_SYMLINK) {
+    readi(oldip,(char*)&counter,0,4);
+    counter++;
+  }
+  iunlock(oldip);
+  }
+  if (counter>15)
+    return -1;
+
+  begin_trans();
+  ip = create(newpath, T_SYMLINK, 0, 0);
+  commit_trans();
+  if(ip == 0) {
+    return -1;
+  }
+
+  begin_trans();
+  int flag=0;
+  if ((writei(ip, (char*)&counter, 0, 4) < 4))
+      flag =1;
+  if ((writei(ip, oldpath, 4, strlen(oldpath))) < strlen(oldpath))
+      flag =1;
+  char* nil = "\0";
+  if ((writei(ip, nil , 4+strlen(oldpath),1)) < 1)                  //null terminate string
+      flag =1;
+  iunlockput(ip);
+  commit_trans();
+  if (flag)
+    return -1;
+  return 0;
+}
+
+int
+sys_readlink(void) {
+  char* pathname;
+  char* buf;
+  int bufsiz;
+  struct inode *ip;
+  
+  if(argstr(0, &pathname) < 0)
+    return -2;
+  if(argptr(1, &buf,1) < 0)
+    return -2;
+  if(argint(2 ,&bufsiz) < 0)
+    return -2;
+
+  if((ip = namei(pathname)) == 0)
+    return -1;
+  if (ip->type !=T_SYMLINK)
+    return -1;
+  int counter=0;
+  char temp=1;
+ 
+  char* mybuf = kalloc();
+  memset(mybuf,0,4096);
+  do {
+    ilock(ip);
+    while(temp && counter < 4096) {
+      if(readi(ip, &temp, 4+counter, 1) != 1) {
+        iunlock(ip);
+        kfree(mybuf);
+        return -1;
+      }
+      mybuf[counter]=temp;
+      counter++;
+    }
+    counter=0;temp=1;
+    iunlock(ip);
+    if (mybuf[0]=='/')
+      ip=namei(mybuf);
+    //else
+
+  } while (ip && ip->type==T_SYMLINK);
+  safestrcpy(buf,mybuf,bufsiz);
+  kfree(mybuf);
+  return counter;
+}
