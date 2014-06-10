@@ -443,7 +443,7 @@ sys_symlink(void) {
     readi(oldip,(char*)&counter,0,4);
     counter++;
   }
-  iunlock(oldip);
+  iunlockput(oldip);
   }
   if (counter>15)
     return -1;
@@ -471,12 +471,13 @@ sys_symlink(void) {
   return 0;
 }
 
+static int 
+readlink(char* pathname,char* buf, int bufsiz);
 int
 sys_readlink(void) {
   char* pathname;
   char* buf;
   int bufsiz;
-  struct inode *ip;
   
   if(argstr(0, &pathname) < 0)
     return -2;
@@ -484,34 +485,45 @@ sys_readlink(void) {
     return -2;
   if(argint(2 ,&bufsiz) < 0)
     return -2;
+  return readlink(pathname,buf,bufsiz);
 
+}
+
+static int 
+readlink(char* pathname,char* buf, int bufsiz) {
+  struct inode *ip;
   if((ip = namei(pathname)) == 0)
     return -1;
   if (ip->type !=T_SYMLINK)
     return -1;
   int counter=0;
   char temp=1;
+  char nameTemp[14];
  
   char* mybuf = kalloc();
   memset(mybuf,0,4096);
+  struct inode* parentIp = namex(pathname,1,nameTemp,0);
   do {
     ilock(ip);
     while(temp && counter < 4096) {
       if(readi(ip, &temp, 4+counter, 1) != 1) {
-        iunlock(ip);
+        iunlockput(ip);
         kfree(mybuf);
         return -1;
       }
-      mybuf[counter]=temp;
+      mybuf[counter]=temp;;
       counter++;
     }
     counter=0;temp=1;
-    iunlock(ip);
-    if (mybuf[0]=='/')
-      ip=namei(mybuf);
-    //else
+    iunlockput(ip);
 
+    ip=namex(mybuf,0,nameTemp,parentIp);
+    struct inode* oldparent = parentIp;
+    parentIp=namex(mybuf,1,nameTemp,parentIp);
+    iput(oldparent);
   } while (ip && ip->type==T_SYMLINK);
+  iput(parentIp);
+  iunlockput(ip);
   safestrcpy(buf,mybuf,bufsiz);
   kfree(mybuf);
   return counter;

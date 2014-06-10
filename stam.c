@@ -22,7 +22,7 @@ main(int argc, char *argv[])
       write(fd,bla,8);  
   }
   printf(2,"wrote 70kb(indirect)\n");
-  for (i=0;i<2048;i++) {
+  for (i=0;i<130;i++) {
     for (j=0;j<64;j++)  //write block
       write(fd,bla,8);  
   }

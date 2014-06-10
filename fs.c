@@ -593,8 +593,7 @@ dirlink(struct inode *dp, char *name, uint inum)
     if(de.inum == 0)
       break;
   }
-  ilock(ip);
-  iunlock(ip);
+  
   strncpy(de.name, name, DIRSIZ);
   de.inum = inum;
   if(writei(dp, (char*)&de, off, sizeof(de)) != sizeof(de))
@@ -643,37 +642,63 @@ skipelem(char *path, char *name)
   return path;
 }
 
+
+static struct inode* 
+derfrenceSymlink(struct inode* ip, struct inode* parent);
 // Look up and return the inode for a path name.
 // If parent != 0, return the inode for the parent and copy the final
 // path element into name, which must have room for DIRSIZ bytes.
-static struct inode*
-namex(char *path, int nameiparent, char *name)
+struct inode*
+namex(char *path, int nameiparent, char *name, struct inode* root)
 {
-  struct inode *ip, *next;
+  struct inode *ip, *next,*parent;
 
   if(*path == '/')
     ip = iget(ROOTDEV, ROOTINO);
+  else if (root)
+    ip = idup(root);
   else
     ip = idup(proc->cwd);
 
+  int flag=0; // flag to disable check if first value of ip is symlink, it's not.
+  parent=0;
   while((path = skipelem(path, name)) != 0){
     ilock(ip);
+//added to derfrence symlink that points to dir
+    if (flag && ip->type == T_SYMLINK) {
+        ip=derfrenceSymlink(ip,parent); //ip is locked, parent is not
+        if (!ip)
+          panic("Weird error-2 in symlink de-refrence");
+    }
+    flag=1;
+//
     if(ip->type != T_DIR){
+      if (parent && ip!=parent)
+        iput(parent);
       iunlockput(ip);
       return 0;
     }
     if(nameiparent && *path == '\0'){
       // Stop one level early.
+      if (parent && ip!=parent)
+        iput(parent);
       iunlock(ip);
       return ip;
     }
+
+    if (parent && ip!=parent)
+      iput(parent);
+    parent=ip;
     if((next = dirlookup(ip, name, 0)) == 0){
       iunlockput(ip);
       return 0;
     }
-    iunlockput(ip);
+    iunlock(parent);
+    //iunlockput(ip);
     ip = next;
   }
+  if (parent && ip!=parent)
+      iput(parent);
   if(nameiparent){
     iput(ip);
     return 0;
@@ -681,15 +706,43 @@ namex(char *path, int nameiparent, char *name)
   return ip;
 }
 
+static struct inode* 
+derfrenceSymlink(struct inode* ip, struct inode* parent) {
+  int counter=0;
+  char temp=1;
+  char nameTemp[14];
+  char* mybuf = kalloc();
+  memset(mybuf,0,4096);
+  do {
+    while(temp && counter < 4096) {
+      if(readi(ip, &temp, 4+counter, 1) != 1) {
+        panic("Weird error in symlink de-refrence");
+      }
+      mybuf[counter]=temp;;
+      counter++;
+    }
+    counter=0;temp=1;
+    iunlockput(ip);
+
+    ip=namex(mybuf,0,nameTemp,parent);  //inode of destination symlink
+    struct inode* oldparent = parent;
+    parent=namex(mybuf,1,nameTemp,parent); //finding parent of destination, in case destination is a symlink
+    if (parent!= oldparent) iput(oldparent);
+    ilock(ip); //return ip locked, like when we got it
+  } while (ip && ip->type==T_SYMLINK);
+  kfree(mybuf);
+  return ip;
+}
+
 struct inode*
 namei(char *path)
 {
   char name[DIRSIZ];
-  return namex(path, 0, name);
+  return namex(path, 0, name,0);
 }
 
 struct inode*
 nameiparent(char *path, char *name)
 {
-  return namex(path, 1, name);
+  return namex(path, 1, name,0);
 }
