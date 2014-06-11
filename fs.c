@@ -58,6 +58,8 @@ balloc(uint dev)
 
   bp = 0;
   readsb(dev, &sb);
+  if (sb.size==0)
+    cprintf("Something really bad happend");
   for(b = 0; b < sb.size; b += BPB){
     bp = bread(dev, BBLOCK(b, sb.ninodes));
     for(bi = 0; bi < BPB && b + bi < sb.size; bi++){
@@ -72,6 +74,25 @@ balloc(uint dev)
     }
     brelse(bp);
   }
+
+
+bp = 0;
+  readsb(dev, &sb);
+  for(b = 0; b < sb.size; b += BPB){
+    bp = bread(dev, BBLOCK(b, sb.ninodes));
+    for(bi = 0; bi < BPB && b + bi < sb.size; bi++){
+      m = 1 << (bi % 8);
+      if((bp->data[bi/8] & m) == 0){  // Is block free?
+        bp->data[bi/8] |= m;  // Mark block in use.
+        log_write(bp);
+        brelse(bp);
+        bzero(dev, b + bi);
+        return b + bi;
+      }
+    }
+    brelse(bp);
+  }
+
   panic("balloc: out of blocks");
 }
 
@@ -382,8 +403,8 @@ bmap(struct inode *ip, uint bn)
   bn -= NINDIRECT;
   if (bn<NDOUBLEIND) {
     struct buf *bp2;
-    uint majorbn = bn/BSIZE;
-    uint minorbn = bn%BSIZE;
+    uint majorbn = bn/128;
+    uint minorbn = bn%128;
     if((addr = ip->addrs[NDIRECT+1]) == 0)
         ip->addrs[NDIRECT+1] = addr = balloc(ip->dev);
     bp = bread(ip->dev, addr);
@@ -667,8 +688,11 @@ namex(char *path, int nameiparent, char *name, struct inode* root)
 //added to derfrence symlink that points to dir
     if (flag && ip->type == T_SYMLINK) {
         ip=derfrenceSymlink(ip,parent); //ip is locked, parent is not
-        if (!ip)
-          panic("Weird error-2 in symlink de-refrence");
+        if (!ip) {
+          cprintf("error in symlink de-refrence. probably a bad symlink\n");
+          iput(parent);
+          return 0;
+        }
     }
     flag=1;
 //
@@ -706,9 +730,12 @@ namex(char *path, int nameiparent, char *name, struct inode* root)
   return ip;
 }
 
+
+//ip should be locked, parent shoud not be locked
 static struct inode* 
 derfrenceSymlink(struct inode* ip, struct inode* parent) {
   int counter=0;
+  int linkjumpcounter=0;
   char temp=1;
   char nameTemp[14];
   char* mybuf = kalloc();
@@ -728,11 +755,31 @@ derfrenceSymlink(struct inode* ip, struct inode* parent) {
     struct inode* oldparent = parent;
     parent=namex(mybuf,1,nameTemp,parent); //finding parent of destination, in case destination is a symlink
     if (parent!= oldparent) iput(oldparent);
-    ilock(ip); //return ip locked, like when we got it
-  } while (ip && ip->type==T_SYMLINK);
+    if (ip) ilock(ip); //return ip locked, like when we got it
+    linkjumpcounter++;
+  } while (ip && ip->type==T_SYMLINK && linkjumpcounter<16);
   kfree(mybuf);
+
+  if (linkjumpcounter==16) {
+    iunlockput(ip);
+    return 0;
+  }
   return ip;
 }
+
+//ip should be locked as input, and will be locked at return
+//path is path of ip which is symlink
+struct inode*
+derefrenceSymlinkWrapper(struct inode* ip,char* path) {
+  char tempbuf[DIRSIZ+1];
+  struct inode* parent = nameiparent(path,tempbuf); 
+  ip=derfrenceSymlink(ip, parent);    //should derefrence all the way 
+  iput(parent);
+  if (ip==0)
+    return 0;
+  return ip;
+}
+
 
 struct inode*
 namei(char *path)

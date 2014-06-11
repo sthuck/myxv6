@@ -100,6 +100,7 @@ extern int sys_write(void);
 extern int sys_uptime(void);
 extern int sys_symlink(void);
 extern int sys_readlink(void);
+extern int sys_openNoFollow(void);
 
 
 static int (*syscalls[])(void) = {
@@ -125,7 +126,8 @@ static int (*syscalls[])(void) = {
 [SYS_mkdir]   sys_mkdir,
 [SYS_close]   sys_close,
 [SYS_symlink] sys_symlink,
-[SYS_readlink] sys_readlink
+[SYS_readlink] sys_readlink,
+[24]          sys_openNoFollow
 };
 
 void

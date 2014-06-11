@@ -54,7 +54,7 @@ sys_dup(void)
 {
   struct file *f;
   int fd;
-  
+
   if(argfd(0, 0, &f) < 0)
     return -1;
   if((fd=fdalloc(f)) < 0)
@@ -92,7 +92,7 @@ sys_close(void)
 {
   int fd;
   struct file *f;
-  
+
   if(argfd(0, &fd, &f) < 0)
     return -1;
   proc->ofile[fd] = 0;
@@ -105,7 +105,7 @@ sys_fstat(void)
 {
   struct file *f;
   struct stat *st;
-  
+
   if(argfd(0, 0, &f) < 0 || argptr(1, (void*)&st, sizeof(*st)) < 0)
     return -1;
   return filestat(f, st);
@@ -231,8 +231,9 @@ bad:
   return -1;
 }
 
+//mode: 0 = dont handle symlinks, 1=follow symlinks
 static struct inode*
-create(char *path, short type, short major, short minor)
+create(char *path, short type, short major, short minor, int mode)
 {
   uint off;
   struct inode *ip, *dp;
@@ -245,6 +246,11 @@ create(char *path, short type, short major, short minor)
   if((ip = dirlookup(dp, name, &off)) != 0){
     iunlockput(dp);
     ilock(ip);
+
+    if (mode && ip->type==T_SYMLINK)
+      if ((ip=derefrenceSymlinkWrapper(ip,path))==0)
+        return 0;
+
     if(type == T_FILE && ip->type == T_FILE)
       return ip;
     iunlockput(ip);
@@ -276,46 +282,69 @@ create(char *path, short type, short major, short minor)
   return ip;
 }
 
+
+static int
+openWrapper(char* path, int omode, int mode) {
+    int fd;
+    struct file *f;
+    struct inode *ip;
+    if(omode & O_CREATE){
+        begin_trans();
+        ip = create(path, T_FILE, 0, 0, mode);
+        commit_trans();
+        if(ip == 0)
+            return -1;
+    } else {
+        if((ip = namei(path)) == 0)
+            return -1;
+        ilock(ip);
+
+        if (mode && ip->type ==T_SYMLINK)                  //Deal with symlinks
+            if ((ip=derefrenceSymlinkWrapper(ip,path))==0)
+                return -1;
+
+        if(ip->type == T_DIR && omode != O_RDONLY){
+            iunlockput(ip);
+            return -1;
+        }
+
+        if((f = filealloc()) == 0 || (fd = fdalloc(f)) < 0){
+            if(f)
+                fileclose(f);
+            iunlockput(ip);
+            return -1;
+        }
+        iunlock(ip);
+
+        f->type = FD_INODE;
+        f->ip = ip;
+        f->off = 0;
+        f->readable = !(omode & O_WRONLY);
+        f->writable = (omode & O_WRONLY) || (omode & O_RDWR);
+        return fd;
+    }
+    return 1111; //will never reach here
+}
+
+
+int
+sys_openNoFollow(void)
+{
+  char *path;
+  int omode;
+  if(argstr(0, &path) < 0 || argint(1, &omode) < 0)
+    return -1;
+  return openWrapper(path,omode,0);
+}
+
 int
 sys_open(void)
 {
   char *path;
-  int fd, omode;
-  struct file *f;
-  struct inode *ip;
-
+  int omode;
   if(argstr(0, &path) < 0 || argint(1, &omode) < 0)
     return -1;
-  if(omode & O_CREATE){
-    begin_trans();
-    ip = create(path, T_FILE, 0, 0);
-    commit_trans();
-    if(ip == 0)
-      return -1;
-  } else {
-    if((ip = namei(path)) == 0)
-      return -1;
-    ilock(ip);
-    if(ip->type == T_DIR && omode != O_RDONLY){
-      iunlockput(ip);
-      return -1;
-    }
-  }
-
-  if((f = filealloc()) == 0 || (fd = fdalloc(f)) < 0){
-    if(f)
-      fileclose(f);
-    iunlockput(ip);
-    return -1;
-  }
-  iunlock(ip);
-
-  f->type = FD_INODE;
-  f->ip = ip;
-  f->off = 0;
-  f->readable = !(omode & O_WRONLY);
-  f->writable = (omode & O_WRONLY) || (omode & O_RDWR);
-  return fd;
+  return openWrapper(path,omode,1);
 }
 
 int
@@ -325,7 +354,7 @@ sys_mkdir(void)
   struct inode *ip;
 
   begin_trans();
-  if(argstr(0, &path) < 0 || (ip = create(path, T_DIR, 0, 0)) == 0){
+  if(argstr(0, &path) < 0 || (ip = create(path, T_DIR, 0, 0,0)) == 0){
     commit_trans();
     return -1;
   }
@@ -341,12 +370,12 @@ sys_mknod(void)
   char *path;
   int len;
   int major, minor;
-  
+
   begin_trans();
   if((len=argstr(0, &path)) < 0 ||
      argint(1, &major) < 0 ||
      argint(2, &minor) < 0 ||
-     (ip = create(path, T_DEV, major, minor)) == 0){
+     (ip = create(path, T_DEV, major, minor,0)) == 0){
     commit_trans();
     return -1;
   }
@@ -364,6 +393,10 @@ sys_chdir(void)
   if(argstr(0, &path) < 0 || (ip = namei(path)) == 0)
     return -1;
   ilock(ip);
+  if (ip->type == T_SYMLINK) 
+    if ((ip=derefrenceSymlinkWrapper(ip,path))==0)
+      return -1;
+
   if(ip->type != T_DIR){
     iunlockput(ip);
     return -1;
@@ -425,7 +458,7 @@ sys_pipe(void)
 }
 
 
-int 
+int
 sys_symlink(void) {
   char* oldpath;
   char* newpath;
@@ -449,7 +482,7 @@ sys_symlink(void) {
     return -1;
 
   begin_trans();
-  ip = create(newpath, T_SYMLINK, 0, 0);
+  ip = create(newpath, T_SYMLINK, 0, 0 , 0);
   commit_trans();
   if(ip == 0) {
     return -1;
@@ -471,14 +504,14 @@ sys_symlink(void) {
   return 0;
 }
 
-static int 
+static int
 readlink(char* pathname,char* buf, int bufsiz);
 int
 sys_readlink(void) {
   char* pathname;
   char* buf;
   int bufsiz;
-  
+
   if(argstr(0, &pathname) < 0)
     return -2;
   if(argptr(1, &buf,1) < 0)
@@ -489,22 +522,26 @@ sys_readlink(void) {
 
 }
 
-static int 
+static int
 readlink(char* pathname,char* buf, int bufsiz) {
   struct inode *ip;
   if((ip = namei(pathname)) == 0)
     return -1;
-  if (ip->type !=T_SYMLINK)
+  ilock(ip);
+  if (ip->type !=T_SYMLINK){
+    iunlock(ip);
     return -1;
+  }
   int counter=0;
+  int linkjumpcounter=0;
   char temp=1;
   char nameTemp[14];
- 
+
   char* mybuf = kalloc();
   memset(mybuf,0,4096);
   struct inode* parentIp = namex(pathname,1,nameTemp,0);
   do {
-    ilock(ip);
+    counter=0;
     while(temp && counter < 4096) {
       if(readi(ip, &temp, 4+counter, 1) != 1) {
         iunlockput(ip);
@@ -514,17 +551,22 @@ readlink(char* pathname,char* buf, int bufsiz) {
       mybuf[counter]=temp;;
       counter++;
     }
-    counter=0;temp=1;
+    temp=1;
     iunlockput(ip);
 
     ip=namex(mybuf,0,nameTemp,parentIp);
     struct inode* oldparent = parentIp;
     parentIp=namex(mybuf,1,nameTemp,parentIp);
     iput(oldparent);
-  } while (ip && ip->type==T_SYMLINK);
+    linkjumpcounter++;
+    ilock(ip);
+  } while (ip && ip->type==T_SYMLINK && linkjumpcounter<16);
   iput(parentIp);
   iunlockput(ip);
+  //iunlockput(ip);
   safestrcpy(buf,mybuf,bufsiz);
   kfree(mybuf);
+  if (linkjumpcounter==16)
+    return -1;
   return counter;
 }

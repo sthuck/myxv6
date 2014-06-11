@@ -169,7 +169,7 @@ UPROGS=\
 	_stam2
 	
 fs.img: mkfs README $(UPROGS)
-	./mkfs fs.img README $(UPROGS)
+	./mkfs fs.img README _text $(UPROGS)
 
 -include *.d
 

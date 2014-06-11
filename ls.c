@@ -30,7 +30,7 @@ ls(char *path)
   struct dirent de;
   struct stat st;
   
-  if((fd = open(path, 0)) < 0){
+  if((fd = openNoFollow(path, 0)) < 0){
     printf(2, "ls: cannot open %s\n", path);
     return;
   }
@@ -43,6 +43,7 @@ ls(char *path)
   
   switch(st.type){
   case T_FILE:
+  case T_SYMLINK:
     printf(1, "%s %d %d %d\n", fmtname(path), st.type, st.ino, st.size);
     break;
   

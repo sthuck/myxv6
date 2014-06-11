@@ -9,7 +9,7 @@
 int
 main(int argc, char *argv[])
 {
-  char buf[32];
+  char buf[32];/*
   symlink("/ls","/bla");
   symlink("/bla","/bla2");
   symlink("/bla2","/bla3");
@@ -22,6 +22,9 @@ main(int argc, char *argv[])
   readlink("/bla5",buf,31);
   printf(2,"%s \n",buf);
   int ret = symlink("/ls","/mknod");
-  printf(2,"overwrite file ret:%d\n",ret);
+  printf(2,"overwrite file ret:%d\n",ret);*/
+   symlink("b","b");
+   readlink("/b",buf,31);
+  printf(2,"%s \n",buf);
   exit();
 }

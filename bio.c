@@ -111,6 +111,8 @@ bwrite(struct buf *b)
   if((b->flags & B_BUSY) == 0)
     panic("bwrite");
   b->flags |= B_DIRTY;
+  if (b->sector==1)
+    cprintf("Got write to superblock\n");
   iderw(b);
 }
 

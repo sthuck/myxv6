@@ -11,7 +11,7 @@
 #include "stat.h"
 #include "param.h"
 
-int nblocks = 32686;
+int nblocks = 32696;
 int nlog = LOGSIZE;
 int ninodes = 200;
 int size = 32768;
