@@ -81,7 +81,6 @@ userinit(void)
 {
   struct proc *p;
   extern char _binary_initcode_start[], _binary_initcode_size[];
-  
   p = allocproc();
   initproc = p;
   if((p->pgdir = setupkvm(kalloc)) == 0)
@@ -96,11 +95,16 @@ userinit(void)
   p->tf->eflags = FL_IF;
   p->tf->esp = PGSIZE;
   p->tf->eip = 0;  // beginning of initcode.S
+  int j;
+  for (j=0;j<200; j++){
+      p->inode[j]=0;
+  }
 
   safestrcpy(p->name, "initcode", sizeof(p->name));
   p->cwd = namei("/");
 
   p->state = RUNNABLE;
+
 }
 
 // Grow current process's memory by n bytes.
@@ -158,7 +162,16 @@ fork(void)
   pid = np->pid;
   np->state = RUNNABLE;
   safestrcpy(np->name, proc->name, sizeof(proc->name));
+  int j=0;
+  for (j=0; j<200;j++)
+   np->inode[j]=proc->inode[j];
   return pid;
+}
+
+struct proc*
+ptableRet(int i){
+return &ptable.proc[i];
+
 }
 
 // Exit the current process.  Does not return.
@@ -200,6 +213,10 @@ exit(void)
 
   // Jump into the scheduler, never to return.
   proc->state = ZOMBIE;
+ //   int i;
+//for (i=0; i<200; i++){
+ // pidInode[proc->pid][i]=0;
+//}
   sched();
   panic("zombie exit");
 }

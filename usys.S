@@ -32,3 +32,6 @@ SYSCALL(uptime)
 SYSCALL(readlink)
 SYSCALL(symlink)
 SYSCALL(openNoFollow)
+SYSCALL(fprot)
+SYSCALL(funprot)
+SYSCALL(funlock)n

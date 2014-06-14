@@ -117,7 +117,7 @@ void            userinit(void);
 int             wait(void);
 void            wakeup(void*);
 void            yield(void);
-
+struct proc*	ptableRet(int);
 // swtch.S
 void            swtch(struct context**, struct context*);
 
@@ -138,6 +138,8 @@ char*           safestrcpy(char*, const char*, int);
 int             strlen(const char*);
 int             strncmp(const char*, const char*, uint);
 char*           strncpy(char*, const char*, int);
+int             strcmp(const char*, const char*);
+char * 			strcpy(char *, char *);
 
 // syscall.c
 int             argint(int, int*);

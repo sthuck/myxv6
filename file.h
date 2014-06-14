@@ -22,6 +22,7 @@ struct inode {
   short nlink;
   uint size;
   uint addrs[NDIRECT+2];
+  char  password[10];
 };
 #define I_BUSY 0x1
 #define I_VALID 0x2

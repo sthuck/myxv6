@@ -25,7 +25,9 @@ int sleep(int);
 int uptime(void);
 int symlink(const char *oldpath, const char *newpath);
 int readlink (const char *pathname, char *buf, int bufsiz);
-
+int fprot (const char *pathname, const char * password);
+int funprot (const char *pathname, const char * password);
+int funlock (const char *pathname, const char * password);
 
 
 // ulib.c

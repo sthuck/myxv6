@@ -24,3 +24,6 @@
 #define SYS_symlink 22
 #define SYS_readlink 23
 #define SYS_openNoFollow 24
+#define SYS_fprot 25
+#define SYS_funprot 26
+#define SYS_funlock 27n

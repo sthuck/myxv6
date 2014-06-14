@@ -15,10 +15,9 @@ struct cpu {
   struct cpu *cpu;
   struct proc *proc;           // The currently-running process.
 };
-
+//int pidInode[64][200];
 extern struct cpu cpus[NCPU];
 extern int ncpu;
-
 // Per-CPU variables, holding pointers to the
 // current cpu and to the current process.
 // The asm suffix tells gcc to use "%gs:0" to refer to cpu
@@ -66,6 +65,7 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+  int inode[200];
 };
 
 // Process memory is laid out contiguously, low addresses first:
