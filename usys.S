@@ -34,4 +34,4 @@ SYSCALL(symlink)
 SYSCALL(openNoFollow)
 SYSCALL(fprot)
 SYSCALL(funprot)
-SYSCALL(funlock)n
+SYSCALL(funlock)

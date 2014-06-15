@@ -37,17 +37,18 @@ allocproc(void)
 {
   struct proc *p;
   char *sp;
-
   acquire(&ptable.lock);
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
     if(p->state == UNUSED)
       goto found;
+
   release(&ptable.lock);
   return 0;
 
 found:
   p->state = EMBRYO;
   p->pid = nextpid++;
+  //p->pid = i;
   release(&ptable.lock);
 
   // Allocate kernel stack.
@@ -102,7 +103,6 @@ userinit(void)
 
   safestrcpy(p->name, "initcode", sizeof(p->name));
   p->cwd = namei("/");
-
   p->state = RUNNABLE;
 
 }
@@ -162,9 +162,12 @@ fork(void)
   pid = np->pid;
   np->state = RUNNABLE;
   safestrcpy(np->name, proc->name, sizeof(proc->name));
+
+  //copying premmesions
   int j=0;
   for (j=0; j<200;j++)
    np->inode[j]=proc->inode[j];
+
   return pid;
 }
 

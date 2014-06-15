@@ -21,13 +21,24 @@ exec(char *path, char **argv)
   struct proghdr ph;
   pde_t *pgdir, *oldpgdir;
 
-  if((ip = namei(path)) == 0)
-    return -1;
+  if((ip = namei(path)) == 0) {
+    char name[DIRSIZ];
+      struct inode* rootip = namei("/");
+      if ((ip=namex(path, 0, name,rootip))==0) {
+        iput(rootip);
+        return -1;
+      }
+      iput(rootip);
+  }
+
   ilock(ip);
   if (ip->type == T_SYMLINK)
     if ((ip=derefrenceSymlinkWrapper(ip,path))==0)
       return -1;
-
+  if (ip->password[0]!=0 && proc->inode[ip->inum] == 0 ) { //if we have password and file has no premmision.
+        iunlockput(ip);
+        return -1;
+    }
   pgdir = 0;
 
   // Check ELF header

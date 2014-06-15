@@ -188,7 +188,6 @@ sys_unlink(void)
     return -1;
   if((dp = nameiparent(path, name)) == 0)
     return -1;
-
   begin_trans();
 
   ilock(dp);
@@ -201,6 +200,10 @@ sys_unlink(void)
     goto bad;
   ilock(ip);
 
+  if (ip->password[0] !=0 && proc->inode[ip->inum] == 0 ) { //if we have password and file has no premmision.
+        iunlockput(ip);
+        return -1;
+    }
   if(ip->nlink < 1)
     panic("unlink: nlink < 1");
   if(ip->type == T_DIR && !isdirempty(ip)){
@@ -253,6 +256,12 @@ create(char *path, short type, short major, short minor, int mode)
 
     if(type == T_FILE && ip->type == T_FILE)
       return ip;
+
+    if (ip->password[0] !=0 && proc->inode[ip->inum] == 0 ) //if we have password and file has no premmision.
+    {
+        iunlockput(ip);
+        return 0;
+    }
     iunlockput(ip);
     return 0;
   }
@@ -302,13 +311,14 @@ int openWrapper(char *path, int omode, int mode){
         if ((ip = namei(path)) == 0)
             return -1;
         ilock(ip);
+
         if (mode && ip->type == T_SYMLINK)
             if ((ip = derefrenceSymlinkWrapper(ip, path)) == 0)
                 return -1;
 
-        if (proc->inode[ip->inum] == 1 && ip->type == T_FILE)
+        if (ip->password[0] !=0 && proc->inode[ip->inum] == 0 ) //if we have password and file has no premmision.
         {
-            iunlock(ip);
+            iunlockput(ip);
             return -1;
         }
         if (ip->type == T_DIR && omode != O_RDONLY)
@@ -418,10 +428,6 @@ sys_exec(void)
     int i;
     uint uargv, uarg;
 
-    {
-        /* data */
-    };
-
     if (argstr(0, &path) < 0 || argint(1, (int *)&uargv) < 0) {
         return -1;
     }
@@ -431,8 +437,6 @@ sys_exec(void)
             return -1;
         if (fetchint(proc, uargv + 4 * i, (int *)&uarg) < 0)
             return -1;
-
-
         if (uarg == 0) {
             argv[i] = 0;
             break;
@@ -440,15 +444,6 @@ sys_exec(void)
         if (fetchstr(proc, uarg, &argv[i]) < 0)
             return -1;
     }
-    struct inode *ip ;
-    if ((ip = namei(path)) == 0)
-        return -1;
-    ilock(ip);
-    if (ip->type == T_FILE && proc->inode[ip->inum] == 1) {
-        iunlockput(ip);
-        return -1;
-    }
-    iunlockput(ip);
     return exec(path, argv);
 }
 
@@ -542,6 +537,16 @@ sys_readlink(void) {
 }
 
 static int
+findLastSlash(const char* buf) {
+  int i;
+  for (i=strlen(buf);i>=0;i--) {
+    if (buf[i]=='/')
+      return i+1;
+  }
+  return 0;
+}
+
+static int
 readlink(char* pathname,char* buf, int bufsiz) {
   struct inode *ip;
   if((ip = namei(pathname)) == 0)
@@ -551,38 +556,41 @@ readlink(char* pathname,char* buf, int bufsiz) {
     iunlock(ip);
     return -1;
   }
-  int counter=0;
   int linkjumpcounter=0;
   char temp=1;
   char nameTemp[14];
 
   char* mybuf = kalloc();
   memset(mybuf,0,4096);
-  struct inode* parentIp = namex(pathname,1,nameTemp,0);
+  safestrcpy(mybuf,pathname,strlen(pathname)+1); //preper for line 584 in case symlink value is relative path
+  char* mybuf2 = mybuf+2048;
   do {
-    counter=0;
-    while(temp && counter < 4096) {
-      if(readi(ip, &temp, 4+counter, 1) != 1) {
+    int i=0;
+    while(temp && i < 2048) {
+      if(readi(ip, &temp, 4+i, 1) != 1) {
         iunlockput(ip);
         kfree(mybuf);
         return -1;
       }
-      mybuf[counter]=temp;;
-      counter++;
+      mybuf2[i++]=temp;;
     }
     temp=1;
     iunlockput(ip);
 
-    ip=namex(mybuf,0,nameTemp,parentIp);
-    struct inode* oldparent = parentIp;
-    parentIp=namex(mybuf,1,nameTemp,parentIp);
-    iput(oldparent);
+    if (mybuf2[0]=='/')                                   //dealing with full path
+      safestrcpy(mybuf,mybuf2,strlen(mybuf2)+1);
+    else {                                                //relative path
+        int last_slash=findLastSlash(mybuf);
+        safestrcpy(mybuf+last_slash,mybuf2,strlen(mybuf2)+1);
+      }
+
+    ip=namex(mybuf,0,nameTemp,0);
     linkjumpcounter++;
-    ilock(ip);
+    if (ip) ilock(ip); 
   } while (ip && ip->type==T_SYMLINK && linkjumpcounter<16);
-  iput(parentIp);
   iunlockput(ip);
-  //iunlockput(ip);
+  
+  int counter=strlen(mybuf);
   safestrcpy(buf,mybuf,bufsiz);
   kfree(mybuf);
   if (linkjumpcounter==16)
@@ -591,86 +599,87 @@ readlink(char* pathname,char* buf, int bufsiz) {
 }
 
 
-int 
-sys_fprot(void){
-char * pathname;
-char * password;
-struct inode *ip;
-int i;
-
-if(argstr(0, &pathname) < 0)
-    return -2;
-if(argstr(1, &password) < 0)
-    return -2;
-if((ip = namei(pathname)) == 0)
-    return -1;
-
-ilock(ip);
-if (ip->type !=T_FILE)
-    return -1;
-
-if (*ip->password!=0 || ip->ref>1 || strlen(password)>10)
+int
+sys_fprot(void)
 {
-  iunlock(ip);
-  return -1;
-}
-strncpy(ip->password,password,strlen(password));
-for(i=strlen(password); i<10; i++)
-  password[i]='\0';
-for (i=0; i<64; i++){
-  ptableRet(i)->inode[ip->inum]=1;
-}
-iunlock(ip);
-return 0;
+    char *pathname;
+    char *password;
+    struct inode *ip;
+    int i;
+
+    if (argstr(0, &pathname) < 0)
+        return -2;
+    if (argstr(1, &password) < 0)
+        return -2;
+    if ((ip = namei(pathname)) == 0)
+        return -1;
+
+    ilock(ip);
+    if (ip->type != T_FILE) {
+      iunlockput(ip);
+      return -1;
+    }
+
+    if (ip->password[0] != 0 || ip->ref > 1 || strlen(password) > 10) {
+        iunlockput(ip);
+        return -1;
+    }
+    strncpy(ip->password, password, strlen(password));
+    for (i = strlen(password); i < 10; i++)
+        ip->password[i] = '\0';
+    begin_trans();
+    iupdate(ip);
+    commit_trans();
+    iunlockput(ip);
+    return 0;
 }
 
-int 
-sys_funprot(void){
-char * pathname;
-char * password;
-struct inode *ip;
-int i;
-if(argstr(0, &pathname) < 0)
-    return -2;
-if(argstr(1, &password) < 0)
-    return -2;
-if((ip = namei(pathname)) == 0)
-    return -1;
-  ilock(ip);
-
-if(strcmp(ip->password,password)!=0 || ip->type !=T_FILE)
+int
+sys_funprot(void)
 {
-   iunlock(ip);
-  return -1;
+    char *pathname;
+    char *password;
+    struct inode *ip;
+    if (argstr(0, &pathname) < 0)
+        return -2;
+    if (argstr(1, &password) < 0)
+        return -2;
+    if ((ip = namei(pathname)) == 0)
+        return -1;
+    ilock(ip);
 
-}
-*ip->password=0;
-for (i=0; i<64; i++){
-    ptableRet(i)->inode[ip->inum]=0;
-}
-iunlock(ip);
-return 0;
+    if (strcmp(ip->password, password) != 0 || ip->type != T_FILE) {
+        iunlockput(ip);
+        return -1;
+    }
+    ip->password[0] = 0;
+    begin_trans();
+    iupdate(ip);
+    commit_trans();
+
+    iunlockput(ip);
+    return 0;
 
 }
 
 int
-sys_funlock(void){
-char * pathname;
-char * password;
-struct inode *ip;
-  if(argstr(0, &pathname) < 0)
-    return -2;
-if(argstr(1, &password) < 0)
-    return -2;
-if((ip = namei(pathname)) == 0)
-    return -1;
-  ilock(ip);
-if (strcmp(ip->password,password)!=0 || ip->type !=T_FILE)
+sys_funlock(void)
 {
-  iunlock(ip);
-  return -1;
+    char *pathname;
+    char *password;
+    struct inode *ip;
+    if (argstr(0, &pathname) < 0)
+        return -2;
+    if (argstr(1, &password) < 0)
+        return -2;
+    if ((ip = namei(pathname)) == 0)
+        return -1;
+    ilock(ip);
+    if (ip->type != T_FILE || strcmp(ip->password, password) != 0) {
+        iunlockput(ip);
+        return -1;
+    }
+    proc->inode[ip->inum] = 1;
+    iunlockput(ip);
+    return 0;
 }
-proc->inode[ip->inum]=0;
-iunlock(ip);
-return 0;
-}n

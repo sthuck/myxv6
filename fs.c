@@ -480,7 +480,7 @@ itrunc(struct inode *ip)
     ip->addrs[NDIRECT+1] = 0;
   }
 
-
+  ip->password[0]='\0';
   ip->size = 0;
   iupdate(ip);
 }
@@ -755,9 +755,9 @@ derfrenceSymlink(struct inode* ip, struct inode* parent) {
 
     ip=namex(mybuf,0,nameTemp,parent);  //inode of destination symlink
     struct inode* oldparent = parent;
-    parent=namex(mybuf,1,nameTemp,parent); //finding parent of destination, in case destination is a symlink
+    parent=namex(mybuf,1,nameTemp,parent); //finding parent of destination, in case destination is a symlink with "not absloute path"
     if (parent!= oldparent) iput(oldparent);
-    if (ip) ilock(ip); //return ip locked, like when we got it
+    if (ip) ilock(ip);    //return ip locked, like when we got it
     linkjumpcounter++;
   } while (ip && ip->type==T_SYMLINK && linkjumpcounter<16);
   kfree(mybuf);
